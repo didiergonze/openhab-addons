@@ -1,6 +1,9 @@
 name: Build BlueLink test JAR
 
 on:
+  push:
+    branches:
+      - bluelink-cci-test
   workflow_dispatch:
 
 permissions:
