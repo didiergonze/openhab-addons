@@ -202,7 +202,8 @@ public class BluelinkApiEUTest {
         final String baseUrl = "http://localhost:" + WIREMOCK_SERVER.port();
         final var keyPair = KeyPairGenerator.getInstance("RSA").generateKeyPair();
         final var publicKey = (RSAPublicKey) keyPair.getPublic();
-        final String modulus = Base64.getUrlEncoder().withoutPadding().encodeToString(publicKey.getModulus().toByteArray());
+        final String modulus = Base64.getUrlEncoder().withoutPadding()
+                .encodeToString(publicKey.getModulus().toByteArray());
         final String exponent = Base64.getUrlEncoder().withoutPadding()
                 .encodeToString(BigInteger.valueOf(publicKey.getPublicExponent().longValue()).toByteArray());
 
@@ -214,13 +215,13 @@ public class BluelinkApiEUTest {
                         .withBody("<html>login</html>")));
         stubFor(get(urlEqualTo("/auth/api/v1/accounts/certs")).atPriority(1)
                 .willReturn(aResponse().withStatus(200).withHeader("Content-Type", "application/json")
-                        .withBody("{\"retValue\":{\"kid\":\"test-kid\",\"n\":\"%s\",\"e\":\"%s\"}}"
-                                .formatted(modulus, exponent))));
+                        .withBody("{\"retValue\":{\"kid\":\"test-kid\",\"n\":\"%s\",\"e\":\"%s\"}}".formatted(modulus,
+                                exponent))));
         stubFor(post(urlEqualTo("/auth/account/signin")).withHeader("Cookie", containing("SESSION=test-session"))
                 .withRequestBody(containing("username=test%40example.com"))
                 .withRequestBody(containing("encryptedPassword=true")).atPriority(1)
-                .willReturn(aResponse().withStatus(302)
-                        .withHeader("Location", "https://oneapp.hyundai.com/redirect?code=test-code&state=ccsp")));
+                .willReturn(aResponse().withStatus(302).withHeader("Location",
+                        "https://oneapp.hyundai.com/redirect?code=test-code&state=ccsp")));
         stubFor(post(urlEqualTo("/domain/api/v1/auth/token?code=test-code")).atPriority(1)
                 .willReturn(aResponse().withStatus(200).withHeader("Content-Type", "application/json")
                         .withBody("{\"accessToken\":\"cci-access\",\"refreshToken\":\"cci-refresh\","
@@ -240,8 +241,8 @@ public class BluelinkApiEUTest {
 
         assertTrue(api.login());
         verify(1, postRequestedFor(urlEqualTo("/domain/api/v1/auth/token-exchange?serviceType=CCS")));
-        verify(postRequestedFor(urlEqualTo("/api/v1/spa/notifications/register"))
-                .withHeader("Authorization", equalTo("Bearer ccs-access")));
+        verify(postRequestedFor(urlEqualTo("/api/v1/spa/notifications/register")).withHeader("Authorization",
+                equalTo("Bearer ccs-access")));
     }
 
     @Test

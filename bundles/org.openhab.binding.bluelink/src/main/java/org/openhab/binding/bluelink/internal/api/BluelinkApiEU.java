@@ -407,9 +407,8 @@ public class BluelinkApiEU extends AbstractBluelinkApi<Vehicle> {
                         "https://idpconnect-eu.hyundai.com", "6d477c38-3ca4-4cf3-9557-2a1929a94654",
                         "014d2225-8495-4735-812d-2616334fd15d", "KUy49XxPzLpLuoK0xhBC77W6VXhmtQR9iQhmIFjjoY4IpxsV",
                         "RFtoRq/vDXJmRndoZaZQyfOot7OrIqGVFj96iY2WL3yyH5Z/pUvlUhqmCxD2t+D65SQ=", "GCM",
-                        new CciConfig("4f4953b5-02e1-4dbc-8599-87e983ee1be5",
-                                "https://oneapp.hyundai.com/redirect", "https://cci-api-eu.hyundai.com",
-                                "com.hyundai.oneapp.eu", "hyundai", "18.7", "APNS"));
+                        new CciConfig("4f4953b5-02e1-4dbc-8599-87e983ee1be5", "https://oneapp.hyundai.com/redirect",
+                                "https://cci-api-eu.hyundai.com", "com.hyundai.oneapp.eu", "hyundai", "18.7", "APNS"));
                 case KIA -> new BrandConfig("https://prd.eu-ccapi.kia.com:8080", "https://idpconnect-eu.kia.com",
                         "fdc85c00-0a2f-4c64-bcb4-2cfb1500730a", "a2b8469b-30a3-4361-8e13-6fceea8fbe74", "secret",
                         "wLTVxwidmH8CfJYBWSnHD6E0huk0ozdiuygB4hLkM5XCgzAL1Dk5sE36d/bx5PFMbZs=", "APNS",

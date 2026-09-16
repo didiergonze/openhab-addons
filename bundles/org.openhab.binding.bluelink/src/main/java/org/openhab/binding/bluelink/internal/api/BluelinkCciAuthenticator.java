@@ -111,8 +111,8 @@ final class BluelinkCciAuthenticator {
         authorize(cookies);
 
         final CertificateResponse certificate = sendJson(
-                request(loginBaseUrl + "/auth/api/v1/accounts/certs", HttpMethod.GET, cookies)
-                        .header(HttpHeader.ACCEPT, APPLICATION_JSON),
+                request(loginBaseUrl + "/auth/api/v1/accounts/certs", HttpMethod.GET, cookies).header(HttpHeader.ACCEPT,
+                        APPLICATION_JSON),
                 CertificateResponse.class, "fetch CCI RSA certificate");
         if (certificate.retValue() == null || certificate.retValue().kid().isBlank()
                 || certificate.retValue().n().isBlank() || certificate.retValue().e().isBlank()) {
@@ -167,27 +167,26 @@ final class BluelinkCciAuthenticator {
 
     private void authorize(final SessionCookies cookies) throws BluelinkApiException {
         URI uri = URI.create(loginBaseUrl + "/auth/api/v2/user/oauth2/authorize?response_type=code&client_id="
-                + encode(config.oneAppClientId()) + "&redirect_uri=" + encode(config.oneAppRedirectUri())
-                + "&lang=" + encode(language) + "&state=ccsp&country=" + encode(country));
+                + encode(config.oneAppClientId()) + "&redirect_uri=" + encode(config.oneAppRedirectUri()) + "&lang="
+                + encode(language) + "&state=ccsp&country=" + encode(country));
 
         for (int redirects = 0; redirects <= MAX_REDIRECTS; redirects++) {
-            final ContentResponse response = send(request(uri.toString(), HttpMethod.GET, cookies).followRedirects(false),
-                    "CCI authorize");
+            final ContentResponse response = send(
+                    request(uri.toString(), HttpMethod.GET, cookies).followRedirects(false), "CCI authorize");
             cookies.capture(response);
             final String body = response.getContentAsString();
             final String location = response.getHeaders().get(HttpHeader.LOCATION);
 
             if (body.toLowerCase(Locale.ROOT).contains("abusing")
                     || (location != null && location.contains("/error?status=400"))) {
-                throw new BluelinkApiException(
-                        "CCI authorize rejected as an abusing request (server-side WAF block)");
+                throw new BluelinkApiException("CCI authorize rejected as an abusing request (server-side WAF block)");
             }
             if (response.getStatus() >= 200 && response.getStatus() < 300) {
                 return;
             }
             if (response.getStatus() < 300 || response.getStatus() >= 400 || location == null) {
-                throw new BluelinkApiException("CCI authorize failed: HTTP %d (%s)".formatted(response.getStatus(),
-                        truncate(body)));
+                throw new BluelinkApiException(
+                        "CCI authorize failed: HTTP %d (%s)".formatted(response.getStatus(), truncate(body)));
             }
             uri = uri.resolve(location);
         }
@@ -205,9 +204,9 @@ final class BluelinkCciAuthenticator {
 
     private CcsToken refresh(final CciTokenBundle bundle) throws BluelinkApiException {
         final Map<String, String> body = Map.of("accessToken", bundle.cciAccessToken, "refreshToken",
-                bundle.refreshToken, "exchangeableAccessToken", bundle.exchangeableToken,
-                "exchangeableRefreshToken", bundle.exchangeableRefreshToken, "nonCcsToken", bundle.nonCcsToken,
-                "nonCcsRefreshToken", bundle.nonCcsRefreshToken, "idToken", bundle.idToken);
+                bundle.refreshToken, "exchangeableAccessToken", bundle.exchangeableToken, "exchangeableRefreshToken",
+                bundle.exchangeableRefreshToken, "nonCcsToken", bundle.nonCcsToken, "nonCcsRefreshToken",
+                bundle.nonCcsRefreshToken, "idToken", bundle.idToken);
         final Request request = cciRequest(config.apiUrl() + "/domain/api/v2/auth/token-refresh", HttpMethod.POST,
                 bundle.deviceId, bundle.cciAccessToken, bundle.nonCcsToken, bundle.exchangeableToken)
                 .content(new StringContentProvider(gson.toJson(body)), APPLICATION_JSON);
@@ -217,8 +216,7 @@ final class BluelinkCciAuthenticator {
 
     private CcsToken exchangeCcsToken(final CciTokenBundle bundle) throws BluelinkApiException {
         final Request request = cciRequest(config.apiUrl() + "/domain/api/v1/auth/token-exchange?serviceType=CCS",
-                HttpMethod.POST, bundle.deviceId, bundle.cciAccessToken, bundle.nonCcsToken,
-                bundle.exchangeableToken);
+                HttpMethod.POST, bundle.deviceId, bundle.cciAccessToken, bundle.nonCcsToken, bundle.exchangeableToken);
         final CcsTokenResponse response = sendJson(request, CcsTokenResponse.class, "CCS token exchange");
         if (response.accessToken() == null || response.accessToken().isBlank()) {
             throw new BluelinkApiException("CCS token exchange returned no access token");
@@ -228,8 +226,9 @@ final class BluelinkCciAuthenticator {
 
     private Request cciRequest(final String uri, final HttpMethod method, final String deviceId,
             final String cciAccessToken, final String nonCcsToken, final String exchangeableToken) {
-        final Request request = httpClient.newRequest(uri).method(method).timeout(AbstractBluelinkApi.HTTP_TIMEOUT_SECONDS,
-                TimeUnit.SECONDS).header("client-id", config.packageId()).header("client-name", config.clientName())
+        final Request request = httpClient.newRequest(uri).method(method)
+                .timeout(AbstractBluelinkApi.HTTP_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+                .header("client-id", config.packageId()).header("client-name", config.clientName())
                 .header("client-version", CLIENT_VERSION).header("client-os-code", "ios")
                 .header("client-os-version", config.osVersion()).header("client-device-id", deviceId)
                 .header("client-device-model", "iPhone")
