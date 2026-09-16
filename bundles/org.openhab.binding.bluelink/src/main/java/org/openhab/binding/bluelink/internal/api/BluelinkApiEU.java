@@ -86,11 +86,10 @@ public class BluelinkApiEU extends AbstractBluelinkApi<Vehicle> {
         super(httpClient, timeZoneProvider, username, password, null);
         this.refreshToken = password;
         final BrandConfig baseBrandConfig = BrandConfig.forBrand(brand);
-        this.brandConfig = optBaseUrl
-                .map(url -> new BrandConfig(url, url, baseBrandConfig.ccspServiceId, baseBrandConfig.appId,
-                        baseBrandConfig.clientSecret, baseBrandConfig.cfb, baseBrandConfig.pushType,
-                        baseBrandConfig.cciConfig != null ? baseBrandConfig.cciConfig.withApiUrl(url) : null))
-                .orElseGet(() -> baseBrandConfig);
+        final @Nullable CciConfig baseCciConfig = baseBrandConfig.cciConfig;
+        this.brandConfig = optBaseUrl.map(url -> new BrandConfig(url, url, baseBrandConfig.ccspServiceId,
+                baseBrandConfig.appId, baseBrandConfig.clientSecret, baseBrandConfig.cfb, baseBrandConfig.pushType,
+                baseCciConfig != null ? baseCciConfig.withApiUrl(url) : null)).orElseGet(() -> baseBrandConfig);
         final CciConfig cciConfig = this.brandConfig.cciConfig;
         this.cciAuthenticator = cciConfig != null && !username.isBlank()
                 ? new BluelinkCciAuthenticator(httpClient, gson, this.brandConfig.loginBaseUrl, cciConfig, username,

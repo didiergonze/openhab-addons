@@ -114,13 +114,13 @@ final class BluelinkCciAuthenticator {
                 request(loginBaseUrl + "/auth/api/v1/accounts/certs", HttpMethod.GET, cookies).header(HttpHeader.ACCEPT,
                         APPLICATION_JSON),
                 CertificateResponse.class, "fetch CCI RSA certificate");
-        if (certificate.retValue() == null || certificate.retValue().kid().isBlank()
-                || certificate.retValue().n().isBlank() || certificate.retValue().e().isBlank()) {
+        final @Nullable Certificate rsaCertificate = certificate.retValue();
+        if (rsaCertificate == null || rsaCertificate.kid().isBlank() || rsaCertificate.n().isBlank()
+                || rsaCertificate.e().isBlank()) {
             throw new BluelinkApiException("CCI RSA certificate response is incomplete");
         }
 
-        final String encryptedPassword = encryptPassword(password, certificate.retValue().n(),
-                certificate.retValue().e());
+        final String encryptedPassword = encryptPassword(password, rsaCertificate.n(), rsaCertificate.e());
         final Map<String, String> fields = new LinkedHashMap<>();
         fields.put("client_id", config.oneAppClientId());
         fields.put("encryptedPassword", "true");
@@ -131,7 +131,7 @@ final class BluelinkCciAuthenticator {
         fields.put("state", "ccsp");
         fields.put("username", username);
         fields.put("connector_session_key", "");
-        fields.put("kid", certificate.retValue().kid());
+        fields.put("kid", rsaCertificate.kid());
         fields.put("_csrf", "");
 
         final Request signin = request(loginBaseUrl + "/auth/account/signin", HttpMethod.POST, cookies)
