@@ -12,8 +12,10 @@
  */
 package org.openhab.binding.bluelink.internal.api;
 
+import java.io.IOException;
 import java.math.BigInteger;
-import java.net.HttpCookie;
+import java.net.CookieManager;
+import java.net.CookiePolicy;
 import java.net.URI;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
@@ -27,6 +29,7 @@ import java.time.ZoneId;
 import java.util.Base64;
 import java.util.HexFormat;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
@@ -113,7 +116,7 @@ final class BluelinkCciAuthenticator {
         final CertificateResponse certificate = sendJson(
                 request(loginBaseUrl + "/auth/api/v1/accounts/certs", HttpMethod.GET, cookies).header(HttpHeader.ACCEPT,
                         APPLICATION_JSON),
-                CertificateResponse.class, "fetch CCI RSA certificate");
+                CertificateResponse.class, "fetch CCI RSA certificate", cookies);
         final @Nullable Certificate rsaCertificate = certificate.retValue();
         if (rsaCertificate == null || rsaCertificate.kid().isBlank() || rsaCertificate.n().isBlank()
                 || rsaCertificate.e().isBlank()) {
@@ -253,7 +256,7 @@ final class BluelinkCciAuthenticator {
         final Request request = httpClient.newRequest(uri).method(method)
                 .timeout(AbstractBluelinkApi.HTTP_TIMEOUT_SECONDS, TimeUnit.SECONDS)
                 .header(HttpHeader.USER_AGENT, MOBILE_USER_AGENT);
-        final String cookieHeader = cookies.asHeader();
+        final String cookieHeader = cookies.asHeader(URI.create(uri));
         if (!cookieHeader.isBlank()) {
             request.header(HttpHeader.COOKIE, cookieHeader);
         }
@@ -263,6 +266,18 @@ final class BluelinkCciAuthenticator {
     private <T> T sendJson(final Request request, final Class<T> type, final String operation)
             throws BluelinkApiException {
         final ContentResponse response = send(request, operation);
+        return parseJson(response, type, operation);
+    }
+
+    private <T> T sendJson(final Request request, final Class<T> type, final String operation,
+            final SessionCookies cookies) throws BluelinkApiException {
+        final ContentResponse response = send(request, operation);
+        cookies.capture(response);
+        return parseJson(response, type, operation);
+    }
+
+    private <T> T parseJson(final ContentResponse response, final Class<T> type, final String operation)
+            throws BluelinkApiException {
         if (response.getStatus() != HttpStatus.OK_200) {
             throw new BluelinkApiException("%s failed: HTTP %d (%s)".formatted(operation, response.getStatus(),
                     truncate(response.getContentAsString())));
@@ -281,7 +296,12 @@ final class BluelinkCciAuthenticator {
             Thread.currentThread().interrupt();
             throw new BluelinkApiException(operation + " interrupted", e);
         } catch (TimeoutException | ExecutionException e) {
-            throw new BluelinkApiException(operation + " failed", e);
+            final @Nullable Throwable nestedCause = e.getCause();
+            final Throwable cause = nestedCause != null ? nestedCause : e;
+            final @Nullable String causeMessage = cause.getMessage();
+            final String details = cause.getClass().getSimpleName()
+                    + (causeMessage == null || causeMessage.isBlank() ? "" : ": " + causeMessage);
+            throw new BluelinkApiException(operation + " failed: " + details, cause);
         }
     }
 
@@ -402,28 +422,28 @@ final class BluelinkCciAuthenticator {
     }
 
     private static final class SessionCookies {
-        private final Map<String, HttpCookie> cookies = new LinkedHashMap<>();
+        private final CookieManager cookieManager = new CookieManager(null, CookiePolicy.ACCEPT_ALL);
 
         private void capture(final ContentResponse response) {
-            for (final String header : response.getHeaders().getValuesList(HttpHeader.SET_COOKIE)) {
-                try {
-                    for (final HttpCookie cookie : HttpCookie.parse(header)) {
-                        if (cookie.getMaxAge() == 0) {
-                            cookies.remove(cookie.getName());
-                        } else {
-                            cookies.put(cookie.getName(), cookie);
-                        }
-                    }
-                } catch (final IllegalArgumentException e) {
-                    // Ignore a malformed optional cookie instead of failing the authentication session.
-                }
+            final List<String> setCookies = response.getHeaders().getValuesList(HttpHeader.SET_COOKIE);
+            if (setCookies.isEmpty()) {
+                return;
+            }
+            try {
+                cookieManager.put(response.getRequest().getURI(), Map.of(HttpHeader.SET_COOKIE.asString(), setCookies));
+            } catch (final IOException | IllegalArgumentException e) {
+                // Ignore a malformed optional cookie instead of failing the authentication session.
             }
         }
 
-        private String asHeader() {
-            return cookies.values().stream().filter(cookie -> !cookie.hasExpired())
-                    .map(cookie -> cookie.getName() + "=" + cookie.getValue())
-                    .collect(java.util.stream.Collectors.joining("; "));
+        private String asHeader(final URI uri) {
+            try {
+                return cookieManager.get(uri, Map.of()).entrySet().stream()
+                        .filter(entry -> HttpHeader.COOKIE.asString().equalsIgnoreCase(entry.getKey()))
+                        .flatMap(entry -> entry.getValue().stream()).collect(java.util.stream.Collectors.joining("; "));
+            } catch (final IOException e) {
+                return "";
+            }
         }
     }
 }

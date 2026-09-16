@@ -215,9 +215,11 @@ public class BluelinkApiEUTest {
                         .withBody("<html>login</html>")));
         stubFor(get(urlEqualTo("/auth/api/v1/accounts/certs")).atPriority(1)
                 .willReturn(aResponse().withStatus(200).withHeader("Content-Type", "application/json")
+                        .withHeader("Set-Cookie", "CERT_SESSION=certificate-session; Path=/")
                         .withBody("{\"retValue\":{\"kid\":\"test-kid\",\"n\":\"%s\",\"e\":\"%s\"}}".formatted(modulus,
                                 exponent))));
         stubFor(post(urlEqualTo("/auth/account/signin")).withHeader("Cookie", containing("SESSION=test-session"))
+                .withHeader("Cookie", containing("CERT_SESSION=certificate-session"))
                 .withRequestBody(containing("username=test%40example.com"))
                 .withRequestBody(containing("encryptedPassword=true")).atPriority(1)
                 .willReturn(aResponse().withStatus(302).withHeader("Location",
