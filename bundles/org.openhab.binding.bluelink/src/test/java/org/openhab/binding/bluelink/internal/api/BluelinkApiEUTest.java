@@ -18,8 +18,13 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.openhab.binding.bluelink.internal.MockApiData.*;
 import static org.openhab.core.library.unit.SIUnits.METRE;
 
+import java.math.BigInteger;
+import java.security.KeyPairGenerator;
+import java.security.interfaces.RSAPublicKey;
 import java.time.Instant;
 import java.time.ZoneId;
+import java.util.Base64;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicReference;
@@ -48,6 +53,7 @@ import com.github.tomakehurst.wiremock.core.WireMockConfiguration;
 
 /**
  * @author Florian Hotze - Initial contribution
+ * @author Didier Gonze - OneApp/CCI authentication tests
  */
 @NonNullByDefault
 public class BluelinkApiEUTest {
@@ -83,7 +89,7 @@ public class BluelinkApiEUTest {
     void testLoginAndGetVehicleStatus() throws BluelinkApiException {
         final String baseUrl = "http://localhost:" + WIREMOCK_SERVER.port();
         final BluelinkApiEU api = new BluelinkApiEU(HTTP_CLIENT, Brand.HYUNDAI, Map.of(), Optional.of(baseUrl),
-                timeZoneProvider, MockApiData.TEST_REFRESH_TOKEN);
+                timeZoneProvider, "", MockApiData.TEST_REFRESH_TOKEN, Locale.GERMANY);
         assertTrue(api.login());
 
         // Verify device ID was obtained
@@ -192,10 +198,57 @@ public class BluelinkApiEUTest {
     }
 
     @Test
+    void testCciPasswordLoginFallback() throws Exception {
+        final String baseUrl = "http://localhost:" + WIREMOCK_SERVER.port();
+        final var keyPair = KeyPairGenerator.getInstance("RSA").generateKeyPair();
+        final var publicKey = (RSAPublicKey) keyPair.getPublic();
+        final String modulus = Base64.getUrlEncoder().withoutPadding().encodeToString(publicKey.getModulus().toByteArray());
+        final String exponent = Base64.getUrlEncoder().withoutPadding()
+                .encodeToString(BigInteger.valueOf(publicKey.getPublicExponent().longValue()).toByteArray());
+
+        stubFor(post(urlEqualTo("/auth/api/v2/user/oauth2/token"))
+                .withRequestBody(containing("refresh_token=" + MockApiData.TEST_PASSWORD)).atPriority(1)
+                .willReturn(aResponse().withStatus(401)));
+        stubFor(get(urlPathEqualTo("/auth/api/v2/user/oauth2/authorize")).atPriority(1)
+                .willReturn(aResponse().withStatus(200).withHeader("Set-Cookie", "SESSION=test-session; Path=/")
+                        .withBody("<html>login</html>")));
+        stubFor(get(urlEqualTo("/auth/api/v1/accounts/certs")).atPriority(1)
+                .willReturn(aResponse().withStatus(200).withHeader("Content-Type", "application/json")
+                        .withBody("{\"retValue\":{\"kid\":\"test-kid\",\"n\":\"%s\",\"e\":\"%s\"}}"
+                                .formatted(modulus, exponent))));
+        stubFor(post(urlEqualTo("/auth/account/signin")).withHeader("Cookie", containing("SESSION=test-session"))
+                .withRequestBody(containing("username=test%40example.com"))
+                .withRequestBody(containing("encryptedPassword=true")).atPriority(1)
+                .willReturn(aResponse().withStatus(302)
+                        .withHeader("Location", "https://oneapp.hyundai.com/redirect?code=test-code&state=ccsp")));
+        stubFor(post(urlEqualTo("/domain/api/v1/auth/token?code=test-code")).atPriority(1)
+                .willReturn(aResponse().withStatus(200).withHeader("Content-Type", "application/json")
+                        .withBody("{\"accessToken\":\"cci-access\",\"refreshToken\":\"cci-refresh\","
+                                + "\"nonCcsToken\":\"non-ccs\",\"exchangeableAccessToken\":\"exchangeable\","
+                                + "\"exchangeableRefreshToken\":\"exchangeable-refresh\","
+                                + "\"nonCcsRefreshToken\":\"non-ccs-refresh\",\"idToken\":\"id-token\"}")));
+        stubFor(post(urlEqualTo("/domain/api/v1/auth/token-exchange?serviceType=CCS"))
+                .withHeader("Authorization", equalTo("Bearer cci-access"))
+                .withHeader("Authentication", equalTo("non-ccs"))
+                .withHeader("exchangeable-token", equalTo("exchangeable")).atPriority(1)
+                .willReturn(aResponse().withStatus(200).withHeader("Content-Type", "application/json")
+                        .withBody("{\"accessToken\":\"ccs-access\",\"expiresTime\":%d}"
+                                .formatted(Instant.now().plusSeconds(3600).getEpochSecond()))));
+
+        final BluelinkApiEU api = new BluelinkApiEU(HTTP_CLIENT, Brand.HYUNDAI, Map.of(), Optional.of(baseUrl),
+                timeZoneProvider, MockApiData.TEST_USERNAME, MockApiData.TEST_PASSWORD, Locale.GERMANY);
+
+        assertTrue(api.login());
+        verify(1, postRequestedFor(urlEqualTo("/domain/api/v1/auth/token-exchange?serviceType=CCS")));
+        verify(postRequestedFor(urlEqualTo("/api/v1/spa/notifications/register"))
+                .withHeader("Authorization", equalTo("Bearer ccs-access")));
+    }
+
+    @Test
     void testControlActionsThrow() throws Exception {
         final String baseUrl = "http://localhost:" + WIREMOCK_SERVER.port();
         final BluelinkApiEU api = new BluelinkApiEU(HTTP_CLIENT, Brand.HYUNDAI, Map.of(), Optional.of(baseUrl),
-                timeZoneProvider, MockApiData.TEST_REFRESH_TOKEN);
+                timeZoneProvider, "", MockApiData.TEST_REFRESH_TOKEN, Locale.GERMANY);
         assertTrue(api.login());
 
         final IVehicle vehicle = new Vehicle("test-vehicle-id", "KMHXX00XXXX000000", "My Car", IVehicle.EngineType.EV,

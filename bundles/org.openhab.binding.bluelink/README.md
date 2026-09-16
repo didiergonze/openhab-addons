@@ -29,17 +29,19 @@ registered to your account.
 
 | Parameter  | Required | Description                                                      |
 |------------|----------|------------------------------------------------------------------|
-| `username` | No       | Bluelink account email (not required for EU region)              |
-| `password` | Yes      | Bluelink account password (for EU: refresh token)                |
+| `username` | No       | Bluelink account email (required for Hyundai/Kia EU password login) |
+| `password` | Yes      | Bluelink account password, or a legacy EU refresh token          |
 | `pin`      | No       | Bluelink service PIN (required for lock/unlock commands)         |
 | `region`   | No       | Country code (`US`, `CA`, or `EU`), autodetected if absent       |
 | `brand`    | No       | One of `hyundai`, `kia`, `genesis` (required for CA and EU)      |
 
 #### EU Region Notes
 
-The EU region uses an OAuth2 refresh token instead of username/password authentication.
-Put your refresh token in the `password` field.
-The `username` field is not required for EU.
+For Hyundai and Kia in the EU region, configure the account email address and password.
+The binding first tries the existing refresh-token authentication and then falls back to the current OneApp/CCI password login.
+Existing configurations that contain an OAuth2 refresh token in the `password` field continue to work and do not require a username.
+
+Genesis EU currently supports only the legacy OAuth2 refresh-token authentication.
 Control actions (lock, unlock, climate, charging) are not available for the EU region.
 
 ### `vehicle` Thing

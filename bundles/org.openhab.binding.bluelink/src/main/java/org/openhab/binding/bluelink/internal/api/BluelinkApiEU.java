@@ -12,6 +12,7 @@
  */
 package org.openhab.binding.bluelink.internal.api;
 
+import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.time.LocalDateTime;
@@ -20,6 +21,7 @@ import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.Base64;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
@@ -38,6 +40,7 @@ import org.eclipse.jetty.client.util.StringContentProvider;
 import org.eclipse.jetty.http.HttpHeader;
 import org.eclipse.jetty.http.HttpMethod;
 import org.eclipse.jetty.http.HttpStatus;
+import org.openhab.binding.bluelink.internal.api.BluelinkCciAuthenticator.CciConfig;
 import org.openhab.binding.bluelink.internal.dto.DrivingRange;
 import org.openhab.binding.bluelink.internal.dto.TokenResponse;
 import org.openhab.binding.bluelink.internal.dto.eu.BaseResponse;
@@ -65,6 +68,7 @@ import com.google.gson.reflect.TypeToken;
  * <a href="https://github.com/Hacksore/bluelinky">bluelinky</a>.
  *
  * @author Florian Hotze - Initial contribution
+ * @author Didier Gonze - OneApp/CCI authentication
  */
 @NonNullByDefault
 public class BluelinkApiEU extends AbstractBluelinkApi<Vehicle> {
@@ -73,17 +77,25 @@ public class BluelinkApiEU extends AbstractBluelinkApi<Vehicle> {
 
     private final BrandConfig brandConfig;
     private final String refreshToken;
+    private final @Nullable BluelinkCciAuthenticator cciAuthenticator;
     private @Nullable UUID deviceId;
 
     public BluelinkApiEU(final HttpClient httpClient, final Brand brand, final Map<String, String> properties,
-            final Optional<String> optBaseUrl, final TimeZoneProvider timeZoneProvider, final String refreshToken) {
-        super(httpClient, timeZoneProvider, "", refreshToken, null);
-        this.refreshToken = refreshToken;
+            final Optional<String> optBaseUrl, final TimeZoneProvider timeZoneProvider, final String username,
+            final String password, final Locale locale) {
+        super(httpClient, timeZoneProvider, username, password, null);
+        this.refreshToken = password;
         final BrandConfig baseBrandConfig = BrandConfig.forBrand(brand);
         this.brandConfig = optBaseUrl
                 .map(url -> new BrandConfig(url, url, baseBrandConfig.ccspServiceId, baseBrandConfig.appId,
-                        baseBrandConfig.clientSecret, baseBrandConfig.cfb, baseBrandConfig.pushType))
+                        baseBrandConfig.clientSecret, baseBrandConfig.cfb, baseBrandConfig.pushType,
+                        baseBrandConfig.cciConfig != null ? baseBrandConfig.cciConfig.withApiUrl(url) : null))
                 .orElseGet(() -> baseBrandConfig);
+        final CciConfig cciConfig = this.brandConfig.cciConfig;
+        this.cciAuthenticator = cciConfig != null && !username.isBlank()
+                ? new BluelinkCciAuthenticator(httpClient, gson, this.brandConfig.loginBaseUrl, cciConfig, username,
+                        password, locale, timeZoneProvider.getTimeZone())
+                : null;
         final String storedDeviceId = properties.get("deviceId");
         if (storedDeviceId != null && !storedDeviceId.isBlank()) {
             this.deviceId = UUID.fromString(storedDeviceId);
@@ -113,13 +125,49 @@ public class BluelinkApiEU extends AbstractBluelinkApi<Vehicle> {
      * @throws BluelinkApiException
      */
     private void authenticate() throws BluelinkApiException {
+        final BluelinkCciAuthenticator currentAuthenticator = cciAuthenticator;
+        if (currentAuthenticator != null && currentAuthenticator.hasSession()) {
+            setCciToken(currentAuthenticator.authenticate());
+            return;
+        }
+
+        try {
+            authenticateLegacy();
+            return;
+        } catch (final RetryableRequestException e) {
+            throw e;
+        } catch (final BluelinkApiException e) {
+            final BluelinkCciAuthenticator authenticator = cciAuthenticator;
+            if (brandConfig.cciConfig == null) {
+                throw e;
+            }
+            if (authenticator == null) {
+                throw new BluelinkApiException(
+                        "Legacy refresh-token login failed; username is required for Hyundai/Kia EU password login", e);
+            }
+
+            logger.debug("Legacy EU authentication failed, trying OneApp/CCI authentication");
+            setCciToken(authenticator.authenticate());
+        }
+    }
+
+    private void setCciToken(final BluelinkCciAuthenticator.CcsToken token) {
+        accessToken = token.accessToken();
+        accessTokenExpiry = token.expiry().minusSeconds(60);
+    }
+
+    private void authenticateLegacy() throws BluelinkApiException {
         final String loginUrl = brandConfig.loginBaseUrl + "/auth/api/v2/user/oauth2/token";
-        final String formBody = "grant_type=refresh_token&refresh_token=" + refreshToken + "&client_id="
-                + brandConfig.ccspServiceId + "&client_secret=" + brandConfig.clientSecret;
+        final String formBody = "grant_type=refresh_token&refresh_token=" + encode(refreshToken) + "&client_id="
+                + encode(brandConfig.ccspServiceId) + "&client_secret=" + encode(brandConfig.clientSecret);
         final Request request = httpClient.newRequest(loginUrl).method(HttpMethod.POST)
                 .header(HttpHeader.USER_AGENT, HTTP_USER_AGENT)
                 .content(new StringContentProvider(formBody), "application/x-www-form-urlencoded");
         doLogin(request, TokenResponse.class, t -> t);
+    }
+
+    private static String encode(final String value) {
+        return URLEncoder.encode(value, StandardCharsets.UTF_8);
     }
 
     /**
@@ -351,21 +399,26 @@ public class BluelinkApiEU extends AbstractBluelinkApi<Vehicle> {
     }
 
     record BrandConfig(String apiBaseUrl, String loginBaseUrl, String ccspServiceId, String appId, String clientSecret,
-            String cfb, String pushType) {
+            String cfb, String pushType, @Nullable CciConfig cciConfig) {
 
         static BrandConfig forBrand(final Brand brand) {
             return switch (brand) {
                 case HYUNDAI -> new BrandConfig("https://prd.eu-ccapi.hyundai.com:8080",
                         "https://idpconnect-eu.hyundai.com", "6d477c38-3ca4-4cf3-9557-2a1929a94654",
                         "014d2225-8495-4735-812d-2616334fd15d", "KUy49XxPzLpLuoK0xhBC77W6VXhmtQR9iQhmIFjjoY4IpxsV",
-                        "RFtoRq/vDXJmRndoZaZQyfOot7OrIqGVFj96iY2WL3yyH5Z/pUvlUhqmCxD2t+D65SQ=", "GCM");
+                        "RFtoRq/vDXJmRndoZaZQyfOot7OrIqGVFj96iY2WL3yyH5Z/pUvlUhqmCxD2t+D65SQ=", "GCM",
+                        new CciConfig("4f4953b5-02e1-4dbc-8599-87e983ee1be5",
+                                "https://oneapp.hyundai.com/redirect", "https://cci-api-eu.hyundai.com",
+                                "com.hyundai.oneapp.eu", "hyundai", "18.7", "APNS"));
                 case KIA -> new BrandConfig("https://prd.eu-ccapi.kia.com:8080", "https://idpconnect-eu.kia.com",
                         "fdc85c00-0a2f-4c64-bcb4-2cfb1500730a", "a2b8469b-30a3-4361-8e13-6fceea8fbe74", "secret",
-                        "wLTVxwidmH8CfJYBWSnHD6E0huk0ozdiuygB4hLkM5XCgzAL1Dk5sE36d/bx5PFMbZs=", "APNS");
+                        "wLTVxwidmH8CfJYBWSnHD6E0huk0ozdiuygB4hLkM5XCgzAL1Dk5sE36d/bx5PFMbZs=", "APNS",
+                        new CciConfig("01b36c86-79e8-486c-8009-15f2ad88d670", "https://oneapp.kia.com/redirect",
+                                "https://cci-api-eu.kia.com", "com.kia.oneapp.eu", "kia", "27", "IOS_APPSTORE"));
                 case GENESIS ->
                     new BrandConfig("https://prd-eu-ccapi.genesis.com:8080", "https://idpconnect-eu.genesis.com",
                             "3020afa2-30ff-412a-aa51-d28fbe901e10", "f11f2b86-e0e7-4851-90df-5600b01d8b70", "secret",
-                            "RFtoRq/vDXJmRndoZaZQyYo3/qFLtVReW8P7utRPcc0ZxOzOELm9mexvviBk/qqIp4A=", "GCM");
+                            "RFtoRq/vDXJmRndoZaZQyYo3/qFLtVReW8P7utRPcc0ZxOzOELm9mexvviBk/qqIp4A=", "GCM", null);
                 case UNKNOWN -> throw new IllegalArgumentException("brand not configured");
             };
         }
