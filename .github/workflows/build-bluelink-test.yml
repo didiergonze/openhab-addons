@@ -26,7 +26,7 @@ jobs:
 
       - name: Build and test BlueLink
         run: |
-          ./mvnw -B clean install \
+          ./mvnw -B clean package \
             -pl :org.openhab.binding.bluelink
 
       - name: Upload JAR
