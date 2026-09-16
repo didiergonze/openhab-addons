@@ -16,6 +16,7 @@ import static org.openhab.binding.bluelink.internal.BluelinkBindingConstants.*;
 
 import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.eclipse.jdt.annotation.Nullable;
+import org.eclipse.jetty.client.HttpClient;
 import org.openhab.binding.bluelink.internal.handler.BluelinkAccountHandler;
 import org.openhab.binding.bluelink.internal.handler.BluelinkVehicleHandler;
 import org.openhab.core.i18n.LocaleProvider;
@@ -27,9 +28,12 @@ import org.openhab.core.thing.ThingTypeUID;
 import org.openhab.core.thing.binding.BaseThingHandlerFactory;
 import org.openhab.core.thing.binding.ThingHandler;
 import org.openhab.core.thing.binding.ThingHandlerFactory;
+import org.osgi.service.component.ComponentContext;
 import org.osgi.service.component.annotations.Activate;
 import org.osgi.service.component.annotations.Component;
 import org.osgi.service.component.annotations.Reference;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * The {@link BluelinkHandlerFactory} creates handlers for Bluelink things.
@@ -40,16 +44,35 @@ import org.osgi.service.component.annotations.Reference;
 @Component(configurationPid = "binding.bluelink", service = ThingHandlerFactory.class)
 public class BluelinkHandlerFactory extends BaseThingHandlerFactory {
 
-    private final HttpClientFactory httpClientFactory;
+    private static final int REQUEST_BUFFER_SIZE = 64 * 1024;
+
+    private final Logger logger = LoggerFactory.getLogger(BluelinkHandlerFactory.class);
+    private final HttpClient httpClient;
     private final TimeZoneProvider timeZoneProvider;
     private final LocaleProvider localeProvider;
 
     @Activate
     public BluelinkHandlerFactory(final @Reference HttpClientFactory httpClientFactory,
             final @Reference TimeZoneProvider timeZoneProvider, final @Reference LocaleProvider localeProvider) {
-        this.httpClientFactory = httpClientFactory;
+        this.httpClient = httpClientFactory.createHttpClient(BINDING_ID);
+        this.httpClient.setRequestBufferSize(REQUEST_BUFFER_SIZE);
+        try {
+            this.httpClient.start();
+        } catch (final Exception e) {
+            throw new IllegalStateException("Failed to start BlueLink HTTP client", e);
+        }
         this.timeZoneProvider = timeZoneProvider;
         this.localeProvider = localeProvider;
+    }
+
+    @Override
+    protected void deactivate(final ComponentContext componentContext) {
+        try {
+            httpClient.stop();
+        } catch (final Exception e) {
+            logger.debug("Failed to stop BlueLink HTTP client: {}", e.getMessage());
+        }
+        super.deactivate(componentContext);
     }
 
     @Override
@@ -62,7 +85,6 @@ public class BluelinkHandlerFactory extends BaseThingHandlerFactory {
         final ThingTypeUID thingTypeUID = thing.getThingTypeUID();
 
         if (THING_TYPE_ACCOUNT.equals(thingTypeUID)) {
-            final var httpClient = httpClientFactory.getCommonHttpClient();
             return new BluelinkAccountHandler((Bridge) thing, httpClient, timeZoneProvider, localeProvider);
         }
         if (THING_TYPE_VEHICLE.equals(thingTypeUID)) {
