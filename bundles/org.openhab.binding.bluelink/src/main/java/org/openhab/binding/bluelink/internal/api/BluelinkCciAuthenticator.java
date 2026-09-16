@@ -218,10 +218,11 @@ final class BluelinkCciAuthenticator {
         final Request request = cciRequest(config.apiUrl() + "/domain/api/v1/auth/token-exchange?serviceType=CCS",
                 HttpMethod.POST, bundle.deviceId, bundle.cciAccessToken, bundle.nonCcsToken, bundle.exchangeableToken);
         final CcsTokenResponse response = sendJson(request, CcsTokenResponse.class, "CCS token exchange");
-        if (response.accessToken() == null || response.accessToken().isBlank()) {
+        final String accessToken = response.accessToken();
+        if (accessToken == null || accessToken.isBlank()) {
             throw new BluelinkApiException("CCS token exchange returned no access token");
         }
-        return new CcsToken(response.accessToken(), parseExpiry(response.expiresTime()));
+        return new CcsToken(accessToken, parseExpiry(response.expiresTime()));
     }
 
     private Request cciRequest(final String uri, final HttpMethod method, final String deviceId,

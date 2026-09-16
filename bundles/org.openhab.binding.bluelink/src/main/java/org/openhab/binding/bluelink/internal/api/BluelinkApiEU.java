@@ -153,7 +153,7 @@ public class BluelinkApiEU extends AbstractBluelinkApi<Vehicle> {
 
     private void setCciToken(final BluelinkCciAuthenticator.CcsToken token) {
         accessToken = token.accessToken();
-        accessTokenExpiry = token.expiry().minusSeconds(60);
+        tokenExpiry = token.expiry().minusSeconds(60);
     }
 
     private void authenticateLegacy() throws BluelinkApiException {
