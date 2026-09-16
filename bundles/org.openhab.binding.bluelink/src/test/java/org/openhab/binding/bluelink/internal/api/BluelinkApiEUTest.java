@@ -210,9 +210,9 @@ public class BluelinkApiEUTest {
         stubFor(post(urlEqualTo("/auth/api/v2/user/oauth2/token"))
                 .withRequestBody(containing("refresh_token=" + MockApiData.TEST_PASSWORD)).atPriority(1)
                 .willReturn(aResponse().withStatus(401)));
-        stubFor(get(urlPathEqualTo("/auth/api/v2/user/oauth2/authorize")).atPriority(1)
-                .willReturn(aResponse().withStatus(200).withHeader("Set-Cookie", "SESSION=test-session; Path=/")
-                        .withBody("<html>login</html>")));
+        stubFor(get(urlPathEqualTo("/auth/api/v2/user/oauth2/authorize")).withQueryParam("lang", equalTo("en"))
+                .withQueryParam("country", equalTo("de")).atPriority(1).willReturn(aResponse().withStatus(200)
+                        .withHeader("Set-Cookie", "SESSION=test-session; Path=/").withBody("<html>login</html>")));
         stubFor(get(urlEqualTo("/auth/api/v1/accounts/certs")).atPriority(1)
                 .willReturn(aResponse().withStatus(200).withHeader("Content-Type", "application/json")
                         .withHeader("Set-Cookie", "CERT_SESSION=certificate-session; Path=/")

@@ -73,7 +73,6 @@ final class BluelinkCciAuthenticator {
     private final String username;
     private final String password;
     private final String language;
-    private final String country;
     private final ZoneId zoneId;
 
     private @Nullable CciTokenBundle tokenBundle;
@@ -90,7 +89,6 @@ final class BluelinkCciAuthenticator {
         this.zoneId = zoneId;
 
         this.language = locale.getLanguage().isBlank() ? "en" : locale.getLanguage();
-        this.country = locale.getCountry().isBlank() ? "de" : locale.getCountry().toLowerCase(Locale.ROOT);
     }
 
     CcsToken authenticate() throws BluelinkApiException {
@@ -170,8 +168,8 @@ final class BluelinkCciAuthenticator {
 
     private void authorize(final SessionCookies cookies) throws BluelinkApiException {
         URI uri = URI.create(loginBaseUrl + "/auth/api/v2/user/oauth2/authorize?response_type=code&client_id="
-                + encode(config.oneAppClientId()) + "&redirect_uri=" + encode(config.oneAppRedirectUri()) + "&lang="
-                + encode(language) + "&state=ccsp&country=" + encode(country));
+                + encode(config.oneAppClientId()) + "&redirect_uri=" + encode(config.oneAppRedirectUri())
+                + "&lang=en&state=ccsp&country=de");
 
         for (int redirects = 0; redirects <= MAX_REDIRECTS; redirects++) {
             final ContentResponse response = send(
